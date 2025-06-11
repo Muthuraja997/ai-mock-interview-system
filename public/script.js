@@ -1,13 +1,13 @@
 // Global variables
 let currentQuestionIndex = 0;
-let questions = [];
+let questions = []; // Array of { question: string, context: string }
 let answers = [];
 let mediaRecorder;
 let audioChunks = [];
 let isRecording = false;
 let stream = null;
 let resumeText = '';
-let jobDescription = '';
+let questionFeedback = []; // Store per-question feedback
 
 // Retry utility for API calls
 async function fetchWithRetry(url, options, retries = 3, delay = 1000) {
@@ -51,37 +51,50 @@ function validateFile(file) {
 // Generate questions via backend API
 async function generateQuestions() {
     const resumeFile = document.getElementById('resume').files[0];
-    const jobDesc = document.getElementById('job-description').value.trim();
     const companyName = document.getElementById('company-name').value.trim();
+    const manualResumeText = document.getElementById('manual-resume-text')?.value.trim();
 
-    if (!resumeFile || !jobDesc) {
-        document.getElementById('jd-error').textContent = 'Please upload a resume and enter a job description.';
-        document.getElementById('jd-error').style.display = 'block';
+    if (!resumeFile && !manualResumeText) {
+        document.getElementById('resume-error').textContent = 'Please upload a resume or enter resume text.';
+        document.getElementById('resume-error').style.display = 'block';
         return;
     }
-
-    if (!validateFile(resumeFile)) return;
 
     showPage('loading-page');
 
     try {
-        // Upload resume to server for text extraction
-        const formData = new FormData();
-        formData.append('resume', resumeFile);
-        const resumeResponse = await fetchWithRetry('/api/upload-resume', {
-            method: 'POST',
-            body: formData
-        });
+        // Upload resume or use manual text
+        let resumeResponse;
+        if (resumeFile && validateFile(resumeFile)) {
+            const formData = new FormData();
+            formData.append('resume', resumeFile);
+            resumeResponse = await fetchWithRetry('/api/upload-resume', {
+                method: 'POST',
+                body: formData
+            });
+        } else if (manualResumeText) {
+            resumeResponse = await fetchWithRetry('/api/upload-resume-text', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ resumeText: manualResumeText })
+            });
+        } else {
+            throw new Error('Invalid resume input');
+        }
+
         resumeText = await resumeResponse.text();
-        jobDescription = jobDesc;
+        if (!resumeText.trim()) throw new Error('Empty resume text received');
 
         // Generate questions
         const prompt = `
-            Based on the following resume and job description, generate 5 personalized interview questions for the candidate.
+            Based solely on the following resume, generate 5 realistic interview questions for the candidate, as if asked by a human interviewer. Include a mix of behavioral, technical, and situational questions, each tied to specific details in the resume (e.g., skills, projects, experiences). Do NOT assume or include skills not explicitly listed in the resume (e.g., avoid JavaScript if not mentioned). Ensure questions are natural, role-specific, and phrased professionally.
             Resume: ${resumeText}
-            Job Description: ${jobDescription}
             Company Name: ${companyName || 'Not provided'}
-            Format the response as a JSON array of strings, e.g., ["Question 1", "Question 2", ...].
+            For each question, provide a brief context explaining why it was chosen, referencing specific resume content.
+            Format the response as a JSON array of objects, e.g., [
+                {"question": "Can you describe your experience with X at Y?", "context": "Based on your work with X at Y listed in the resume."},
+                {"question": "How would you handle Z in a team setting?", "context": "Given your role in Z project."}
+            ].
         `;
 
         const response = await fetchWithRetry('/api/generate-questions', {
@@ -98,12 +111,13 @@ async function generateQuestions() {
 
         questions = parsedQuestions;
         answers = new Array(questions.length).fill(null);
+        questionFeedback = new Array(questions.length).fill(null);
         setupQuestionPage();
-        showPage('question-page');
+        showPage('question-page'); // Start asking questions immediately
     } catch (error) {
         console.error('Error generating questions:', error.message, error.stack);
-        document.getElementById('jd-error').textContent = `Error generating questions: ${error.message}. Please check server connection.`;
-        document.getElementById('jd-error').style.display = 'block';
+        document.getElementById('resume-error').textContent = `Error generating questions: ${error.message}. Please check your resume or server connection.`;
+        document.getElementById('resume-error').style.display = 'block';
         showPage('upload-page');
     }
 }
@@ -119,7 +133,7 @@ function setupQuestionPage() {
 // Update question display
 function updateQuestionDisplay() {
     document.getElementById('question-title').textContent = `Question ${currentQuestionIndex + 1} of ${questions.length}`;
-    document.getElementById('question-text').textContent = questions[currentQuestionIndex] || 'No question available';
+    document.getElementById('question-text').textContent = questions[currentQuestionIndex]?.question || 'No question available';
     document.getElementById('recording-status').textContent = 'Click the microphone to start recording your answer';
     document.getElementById('recording-status').className = 'status';
     document.getElementById('text-answer').value = '';
@@ -151,7 +165,7 @@ async function toggleRecording() {
     }
 
     if (!isRecording) await startRecording();
-    else stopRecording();
+    else await stopRecording();
 }
 
 async function startRecording() {
@@ -172,9 +186,12 @@ async function startRecording() {
                     body: formData
                 });
                 answers[currentQuestionIndex] = await response.text();
+                // Evaluate answer accuracy
+                await evaluateAnswer(currentQuestionIndex);
             } catch (error) {
                 console.error('Transcription error:', error.message);
                 answers[currentQuestionIndex] = 'Audio response recorded (transcription failed)';
+                questionFeedback[currentQuestionIndex] = { title: 'Error', content: 'Unable to evaluate answer due to transcription failure.' };
             }
             updateNavigationButtons();
             
@@ -205,7 +222,7 @@ async function startRecording() {
     }
 }
 
-function stopRecording() {
+async function stopRecording() {
     if (mediaRecorder && isRecording) {
         mediaRecorder.stop();
         if (stream) {
@@ -221,11 +238,41 @@ function stopRecording() {
     }
 }
 
+// Evaluate answer accuracy
+async function evaluateAnswer(index) {
+    try {
+        const prompt = `
+            Evaluate the accuracy and relevance of the candidate's answer based solely on their resume and the question asked. Do not assume skills or experiences not listed in the resume.
+            Resume: ${resumeText}
+            Question: ${questions[index].question}
+            Context for Question: ${questions[index].context}
+            Candidate's Answer: ${answers[index] || 'No response provided'}
+            Assess whether the answer aligns with the resume details and addresses the question effectively.
+            Provide feedback as a JSON object with "title" and "content" fields, e.g., {
+                "title": "Answer Accuracy",
+                "content": "Your answer was accurate but lacked specific examples from your resume."
+            }.
+        `;
+
+        const response = await fetchWithRetry('/api/evaluate-answer', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt })
+        });
+
+        questionFeedback[index] = await response.json();
+    } catch (error) {
+        console.error('Error evaluating answer:', error.message);
+        questionFeedback[index] = { title: 'Error', content: `Unable to evaluate answer: ${error.message}` };
+    }
+}
+
 // Handle text answer
-function handleTextInput() {
+async function handleTextInput() {
     const textAnswer = document.getElementById('text-answer').value.trim();
     if (textAnswer) {
         answers[currentQuestionIndex] = textAnswer;
+        await evaluateAnswer(currentQuestionIndex);
         updateNavigationButtons();
         document.getElementById('recording-status').textContent = 'Text answer saved successfully!';
         document.getElementById('recording-status').className = 'status completed-status';
@@ -253,26 +300,25 @@ function nextQuestion() {
     }
 }
 
-// Generate feedback via backend API
+// Generate overall feedback
 async function generateFeedback() {
     showPage('loading-page');
     document.querySelector('.loading h2').textContent = '🤖 AI is analyzing your responses...';
-    document.querySelector('.loading p').textContent = 'Generating personalized feedback and suggestions.';
+    document.querySelector('.loading p').textContent = 'Generating personalized feedback based on your answers.';
 
     try {
         const answerSummaries = answers.map((answer, index) => 
-            `Question ${index + 1}: ${questions[index]} - Answer: ${answer || 'No response provided'}`
-        ).join('\n');
+            `Question ${index + 1}: ${questions[index].question}\nAnswer: ${answer || 'No response provided'}\nFeedback: ${JSON.stringify(questionFeedback[index] || { title: 'Pending', content: 'Not evaluated' })}`
+        ).join('\n\n');
 
         const prompt = `
-            Based on the following resume, job description, and candidate responses, provide detailed feedback on their interview performance.
+            Based solely on the following resume and candidate responses with per-question feedback, provide an overall summary of their interview performance. Highlight accuracy, relevance, and areas for improvement based only on the resume content.
             Resume: ${resumeText}
-            Job Description: ${jobDescription}
-            Responses: ${answerSummaries}
+            Responses and Feedback: ${answerSummaries}
             Format the response as a JSON array of objects with "title" and "content" fields, e.g., [
                 {"title": "Overall Performance", "content": "..."},
-                {"title": "Strengths Identified", "content": "..."}
-            ].
+                {"title": "Strengths", "content": "..."}
+            ]. Include the per-question feedback in the summary.
         `;
 
         const response = await fetchWithRetry('/api/generate-feedback', {
@@ -287,7 +333,16 @@ async function generateFeedback() {
             throw new Error('No valid feedback generated.');
         }
 
-        displayFeedback(feedback);
+        // Combine per-question feedback with overall feedback
+        const combinedFeedback = [
+            ...questionFeedback.map((fb, index) => ({
+                title: `Question ${index + 1} Feedback`,
+                content: fb ? fb.content : 'No feedback available.'
+            })),
+            ...feedback
+        ];
+
+        displayFeedback(combinedFeedback);
         showPage('results-page');
     } catch (error) {
         console.error('Error generating feedback:', error.message, error.stack);
@@ -295,7 +350,7 @@ async function generateFeedback() {
         container.innerHTML = '';
         const errorDiv = document.createElement('div');
         errorDiv.className = 'error';
-        errorDiv.textContent = `Error generating feedback: ${error.message}. Please check server connection.`;
+        errorDiv.textContent = `Error generating feedback: ${error.message}. Please check server connection or API key.`;
         container.appendChild(errorDiv);
         showPage('results-page');
     }
@@ -330,11 +385,14 @@ function startOver() {
     currentQuestionIndex = 0;
     questions = [];
     answers = [];
+    questionFeedback = [];
+    resumeText = '';
     document.getElementById('resume').value = '';
-    document.getElementById('job-description').value = '';
     document.getElementById('company-name').value = '';
+    if (document.getElementById('manual-resume-text')) {
+        document.getElementById('manual-resume-text').value = '';
+    }
     document.getElementById('resume-error').style.display = 'none';
-    document.getElementById('jd-error').style.display = 'none';
     showPage('start-page');
 }
 
@@ -345,9 +403,10 @@ function downloadReport() {
         doc.setFontSize(16);
         doc.text('AI Mock Interview Report', 10, 10);
         doc.setFontSize(12);
-        questions.forEach((question, index) => {
-            doc.text(`Question ${index + 1}: ${question}`, 10, 20 + index * 20);
-            doc.text(`Answer ${index + 1}: ${answers[index] || 'No response provided'}`, 10, 25 + index * 20);
+        questions.forEach((q, index) => {
+            doc.text(`Question ${index + 1}: ${q.question}`, 10, 20 + index * 30);
+            doc.text(`Answer ${index + 1}: ${answers[index] || 'No response provided'}`, 10, 25 + index * 30);
+            doc.text(`Feedback: ${questionFeedback[index]?.content || 'No feedback'}`, 10, 30 + index * 30);
         });
         doc.save('interview-report.pdf');
     } catch (error) {

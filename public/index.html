@@ -16,8 +16,7 @@
             <div style="text-align: center; margin: 40px 0;">
                 <p style="font-size: 1.2em; line-height: 1.6; color: #4a5568;">
                     Welcome to your personalized AI mock interview experience. 
-                    Upload your resume and job description to get started with 
-                    tailored interview questions powered by AI.
+                    Upload your resume or enter resume text to get started with tailored interview questions powered by AI.
                 </p>
             </div>
             <div style="text-align: center;">
@@ -27,18 +26,17 @@
 
         <!-- Upload Page -->
         <div id="upload-page" class="page">
-            <h2>📄 Upload Documents</h2>
+            <h2>📄 Upload Resume</h2>
             
             <div class="form-group">
                 <label for="resume">Upload Resume (PDF/DOC):</label>
-                <input type="file" id="resume" accept=".pdf,.doc,.docx" required aria-describedby="resume-error">
+                <input type="file" id="resume" accept=".pdf,.doc,.docx" aria-describedby="resume-error">
                 <div id="resume-error" class="error" style="display: none;"></div>
             </div>
 
             <div class="form-group">
-                <label for="job-description">Job Description:</label>
-                <textarea id="job-description" placeholder="Paste the job description here..." required aria-describedby="jd-error"></textarea>
-                <div id="jd-error" class="error" style="display: none;"></div>
+                <label for="manual-resume-text">Or Enter Resume Text (if upload fails):</label>
+                <textarea id="manual-resume-text" placeholder="Paste your resume text here..." rows="5"></textarea>
             </div>
 
             <div class="form-group">
@@ -56,8 +54,8 @@
         <div id="loading-page" class="page">
             <div class="loading">
                 <div class="spinner"></div>
-                <h2>🤖 AI is analyzing your documents...</h2>
-                <p>Generating personalized interview questions based on your resume and job description.</p>
+                <h2>🤖 AI is analyzing your resume...</h2>
+                <p>Generating personalized interview questions based on your resume.</p>
             </div>
         </div>
 
