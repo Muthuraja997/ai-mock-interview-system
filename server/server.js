@@ -3,10 +3,15 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const cors = require('cors');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 require('dotenv').config();
 
 const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
+
+// Initialize Gemini API
+const genAI = new GoogleGenerativeAI(process.env.API_KEY);
+const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
 
 // Middleware
 app.use(cors());
@@ -38,27 +43,39 @@ app.post('/api/upload-resume', upload.single('resume'), async (req, res) => {
         if (!req.file) throw new Error('No file uploaded');
         console.log('Processing resume upload');
         // Mock resume text extraction (replace with pdf-parse in production)
-        res.send('Mock resume text: Experienced software engineer with 5 years in JavaScript and Python.');
+        res.send('Mock resume text: Python.');
     } catch (error) {
         console.error('Error processing resume:', error.message);
         res.status(500).send(`Error processing resume: ${error.message}`);
     }
 });
 
-// Question generation endpoint (mock response)
+// Question generation endpoint (using Gemini API)
 app.post('/api/generate-questions', async (req, res) => {
     try {
         const { prompt } = req.body;
         if (!prompt) throw new Error('Prompt is required');
-        console.log('Generating mock questions');
-        // Mock response (replace with Google Gemini API in production)
-        res.json([
-            "Tell me about a challenging project you worked on.",
-            "How do you handle tight deadlines?",
-            "Describe your experience with JavaScript frameworks.",
-            "What strategies do you use for team collaboration?",
-            "How do you stay updated with industry trends?"
-        ]);
+        console.log('Generating questions with Gemini API');
+
+        const result = await model.generateContent(prompt);
+        const response = await result.response;
+        const text = response.text();
+
+        // Parse the JSON response (Gemini returns text, so we need to clean it)
+        let questions;
+        try {
+            // Remove potential markdown code block markers
+            const cleanedText = text.replace(/```json\n|\n```/g, '').trim();
+            questions = JSON.parse(cleanedText);
+        } catch (parseError) {
+            throw new Error(`Failed to parse Gemini response: ${parseError.message}`);
+        }
+
+        if (!Array.isArray(questions) || questions.length === 0) {
+            throw new Error('Invalid or empty questions generated');
+        }
+
+        res.json(questions);
     } catch (error) {
         console.error('Error generating questions:', error.message);
         res.status(500).send(`Error generating questions: ${error.message}`);
