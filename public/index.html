@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Mock Interview System</title>
+    <!-- jsPDF for PDF generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Start Page -->
+        <div id="start-page" class="page active">
+            <h1>🎯 AI Mock Interview</h1>
+            <div style="text-align: center; margin: 40px 0;">
+                <p style="font-size: 1.2em; line-height: 1.6; color: #4a5568;">
+                    Welcome to your personalized AI mock interview experience. 
+                    Upload your resume and job description to get started with 
+                    tailored interview questions powered by AI.
+                </p>
+            </div>
+            <div style="text-align: center;">
+                <button class="btn" onclick="showPage('upload-page')">Get Started</button>
+            </div>
+        </div>
+
+        <!-- Upload Page -->
+        <div id="upload-page" class="page">
+            <h2>📄 Upload Documents</h2>
+            
+            <div class="form-group">
+                <label for="resume">Upload Resume (PDF/DOC):</label>
+                <input type="file" id="resume" accept=".pdf,.doc,.docx" required aria-describedby="resume-error">
+                <div id="resume-error" class="error" style="display: none;"></div>
+            </div>
+
+            <div class="form-group">
+                <label for="job-description">Job Description:</label>
+                <textarea id="job-description" placeholder="Paste the job description here..." required aria-describedby="jd-error"></textarea>
+                <div id="jd-error" class="error" style="display: none;"></div>
+            </div>
+
+            <div class="form-group">
+                <label for="company-name">Company Name (Optional):</label>
+                <input type="text" id="company-name" placeholder="Enter company name">
+            </div>
+
+            <div class="nav-buttons">
+                <button class="btn" onclick="showPage('start-page')">Back</button>
+                <button class="btn" onclick="generateQuestions()">Generate Questions</button>
+            </div>
+        </div>
+
+        <!-- Loading Page -->
+        <div id="loading-page" class="page">
+            <div class="loading">
+                <div class="spinner"></div>
+                <h2>🤖 AI is analyzing your documents...</h2>
+                <p>Generating personalized interview questions based on your resume and job description.</p>
+            </div>
+        </div>
+
+        <!-- Question Pages -->
+        <div id="question-page" class="page">
+            <div class="progress-bar">
+                <div class="progress-fill" id="progress-fill"></div>
+            </div>
+            
+            <h2 id="question-title">Question 1 of 5</h2>
+            
+            <div class="question-container">
+                <div class="question-text" id="question-text">
+                    Question will appear here...
+                </div>
+                
+                <button class="voice-btn btn" id="voice-btn" onclick="toggleRecording()" aria-label="Start recording">
+                    <span id="voice-btn-icon">🎤</span>
+                </button>
+                
+                <div class="status" id="recording-status">
+                    Click the microphone to start recording your answer
+                </div>
+                <textarea id="text-answer" placeholder="Type your answer here (if audio is unavailable)..." style="display: none;"></textarea>
+            </div>
+
+            <div class="nav-buttons">
+                <button class="btn" id="prev-btn" onclick="previousQuestion()" disabled>Previous</button>
+                <button class="btn" id="next-btn" onclick="nextQuestion()" disabled>Next</button>
+            </div>
+        </div>
+
+        <!-- Results Page -->
+        <div id="results-page" class="page">
+            <h2>📊 Interview Complete!</h2>
+            
+            <div class="suggestions" id="suggestions-container">
+                <h3>🎯 AI Feedback & Suggestions:</h3>
+                <div id="suggestions-content">
+                    Loading your personalized feedback...
+                </div>
+            </div>
+
+            <div style="text-align: center; margin-top: 30px;">
+                <button class="btn" onclick="startOver()">Start New Interview</button>
+                <button class="btn" onclick="downloadReport()">Download Report</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
